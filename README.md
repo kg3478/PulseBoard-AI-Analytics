@@ -3,6 +3,8 @@
 > **"Founders don't need a BI tool. They need answers."**  
 > PulseBoard is an AI-powered analytics product that allows non-technical startup founders to query their business data in plain English and receive instant charts, insights, and anomaly alerts. 
 
+**🔴 Live Demo:** [https://pulse-board-ai-analytics.vercel.app](https://pulse-board-ai-analytics.vercel.app)
+
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/Frontend-React+Vite-61DAFB?style=flat-square&logo=react)](https://react.dev/)
 [![DuckDB](https://img.shields.io/badge/Query-DuckDB-FFF000?style=flat-square)](https://duckdb.org/)
