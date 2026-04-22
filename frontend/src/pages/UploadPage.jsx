@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Sparkles, ArrowRight, Database, Zap, Brain } from 'lucide-react';
@@ -14,6 +14,15 @@ export default function UploadPage({ onUploadSuccess }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [uploadResult, setUploadResult] = useState(null);
+  const [readyToNavigate, setReadyToNavigate] = useState(false);
+  const [prefillQuery, setPrefillQuery] = useState('');
+
+  // Navigate only after parent has confirmed session is set
+  useEffect(() => {
+    if (readyToNavigate) {
+      navigate('/dashboard', { state: { prefillQuery } });
+    }
+  }, [readyToNavigate, navigate, prefillQuery]);
 
   const handleFile = useCallback(async (file) => {
     if (!file || !file.name.endsWith('.csv')) {
@@ -32,15 +41,20 @@ export default function UploadPage({ onUploadSuccess }) {
         filename: result.filename,
         rowCount: result.schema.row_count,
       };
-      onUploadSuccess(sessionData);
-      // Store in sessionStorage as backup so navigation never loses it
+      // Save to sessionStorage and parent state BEFORE setting readyToNavigate
       sessionStorage.setItem('pulseboard_session', JSON.stringify(sessionData));
+      onUploadSuccess(sessionData);
     } catch (e) {
       setError(e.message || 'Upload failed. Is the backend running?');
     } finally {
       setUploading(false);
     }
   }, [onUploadSuccess]);
+
+  const handleNavigate = (query = '') => {
+    setPrefillQuery(query);
+    setReadyToNavigate(true);
+  };
 
   const onDrop = useCallback((e) => {
     e.preventDefault();
@@ -192,7 +206,7 @@ export default function UploadPage({ onUploadSuccess }) {
                 {uploadResult.starter_questions?.map((q, i) => (
                   <button
                     key={i}
-                    onClick={() => navigate('/dashboard', { state: { prefillQuery: q } })}
+                    onClick={() => handleNavigate(q)}
                     className="w-full text-left chip flex items-center gap-2 group"
                   >
                     <Sparkles size={12} className="text-indigo-400 flex-shrink-0" />
@@ -203,10 +217,10 @@ export default function UploadPage({ onUploadSuccess }) {
 
               <button
                 id="start-analyzing-btn"
-                onClick={() => navigate('/dashboard')}
+                onClick={() => handleNavigate()}
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
-                Start Analyzing →
+                Start Analyzing
                 <ArrowRight size={16} />
               </button>
             </motion.div>
