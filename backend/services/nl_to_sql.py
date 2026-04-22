@@ -1,52 +1,34 @@
 """
-nl_to_sql.py — Natural Language to SQL translation using Gemini API.
-Uses gemini-2.0-flash with fallback to gemini-1.5-pro.
+nl_to_sql.py — Natural Language to SQL using Groq (llama-3.3-70b-versatile).
 """
 
 import os
 import re
-import time
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-
-# Model cascade: newest first, fallback on 404/unavailable
-_MODEL_NAME = "gemini-2.0-flash"
-
-
-def _get_model():
-    return genai.GenerativeModel(_MODEL_NAME)
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
+_MODEL = "llama-3.3-70b-versatile"
 
 
 def _build_system_prompt(schema: dict) -> str:
     col_descriptions = "\n".join(
         f"  - {c['name']} ({c['type']})" for c in schema["columns"]
     )
-    return f"""You are a SQL expert. The user has uploaded a CSV file loaded as a DuckDB table named 'data'.
+    return f"""You are a SQL expert. The user uploaded a CSV file loaded as a DuckDB table named 'data'.
 
 Table schema:
 {col_descriptions}
 
-Examples:
-  Q: "Show me revenue by city"
-  A: SELECT city, SUM(revenue) AS total_revenue FROM data GROUP BY city ORDER BY total_revenue DESC
-
-  Q: "What is the total MRR?"
-  A: SELECT SUM(mrr) AS total_mrr FROM data
-
-  Q: "Top 5 rows by sales"
-  A: SELECT * FROM data ORDER BY sales DESC LIMIT 5
-
 Rules:
-1. Always use table name 'data'.
-2. Return ONLY the SQL query — no markdown, no code fences, no explanation.
+1. Always use table name 'data' (never anything else).
+2. Return ONLY the raw SQL query — no explanation, no markdown, no code fences, no backticks.
 3. Use DuckDB-compatible SQL syntax.
-4. If column name has spaces, wrap in double quotes.
-5. LIMIT to 500 rows maximum.
-"""
+4. If a column name has spaces, wrap it in double quotes.
+5. Always add ORDER BY for time-series queries.
+6. LIMIT results to 500 rows maximum."""
 
 
 def _extract_sql(text: str) -> str:
@@ -55,38 +37,41 @@ def _extract_sql(text: str) -> str:
 
 
 def nl_to_sql(question: str, schema: dict, previous_error: str = None) -> str:
-    """Convert NL question to SQL with model fallback."""
     system_prompt = _build_system_prompt(schema)
+
     if previous_error:
-        user_message = f"""The previous SQL query failed with:\nError: {previous_error}\n\nFix it. Original question: {question}"""
-    else:
-        user_message = f"Convert to SQL: {question}"
-
-    full_prompt = f"{system_prompt}\n\nUser: {user_message}"
-
-    last_error = None
-    try:
-        model = _get_model()
-        response = model.generate_content(
-            full_prompt,
-            generation_config={"temperature": 0.1, "max_output_tokens": 512},
-            request_options={"timeout": 30},
+        user_message = (
+            f"The previous SQL query failed with error:\n{previous_error}\n\n"
+            f"Fix it and return ONLY the corrected SQL.\nOriginal question: {question}"
         )
-        return _extract_sql(response.text)
+    else:
+        user_message = f"Convert this question to SQL: {question}"
+
+    try:
+        response = _client.chat.completions.create(
+            model=_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.2,
+            max_completion_tokens=512,
+            top_p=1,
+            stream=False,
+        )
+        return _extract_sql(response.choices[0].message.content)
     except Exception as e:
-        raise Exception(f"Gemini ({_MODEL_NAME}) failed: {e}")
+        raise Exception(f"Groq NL-to-SQL failed: {e}")
 
 
 def nl_to_sql_with_retry(question: str, schema: dict, executor) -> dict:
-    """
-    Run NL-to-SQL with up to 2 self-correction retries.
-    executor: callable(sql) -> dict
-    """
+    """Run NL-to-SQL with one self-correction retry."""
     sql = ""
+    last_error = None
+
     for attempt in range(1, 3):
         try:
-            error_ctx = None if attempt == 1 else last_sql_error
-            sql = nl_to_sql(question, schema, previous_error=error_ctx)
+            sql = nl_to_sql(question, schema, previous_error=last_error)
             result = executor(sql)
             return {
                 "sql": sql,
@@ -95,14 +80,20 @@ def nl_to_sql_with_retry(question: str, schema: dict, executor) -> dict:
                 "success": True,
             }
         except Exception as e:
-            last_sql_error = str(e)
+            last_error = str(e)
             if attempt == 2:
                 return {
                     "sql": sql,
                     "result": None,
                     "attempts": attempt,
                     "success": False,
-                    "error": f"Query failed: {last_sql_error}",
+                    "error": f"Query failed after {attempt} attempts: {last_error}",
                 }
 
-    return {"sql": sql, "result": None, "attempts": 2, "success": False, "error": "Query failed."}
+    return {
+        "sql": sql,
+        "result": None,
+        "attempts": 2,
+        "success": False,
+        "error": "AI provider temporarily unavailable",
+    }

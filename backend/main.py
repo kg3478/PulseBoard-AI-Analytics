@@ -171,11 +171,11 @@ async def get_insights(session_id: str):
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    if not os.getenv("GEMINI_API_KEY"):
+    if not os.getenv("GROQ_API_KEY"):
         return {
             "bullets": [
-                "📈 Set your GEMINI_API_KEY in backend/.env to enable AI insight generation.",
-                "💡 Once configured, PulseBoard will generate 3-5 actionable insights every week.",
+                "📈 Set your GROQ_API_KEY in Render environment variables to enable AI insights.",
+                "💡 Once configured, PulseBoard will generate 3-5 actionable insights.",
                 "🎯 Insights are based on week-over-week metric changes in your uploaded data.",
             ],
             "deltas": {},
@@ -199,35 +199,44 @@ async def root_cause_analysis(req: RootCauseRequest):
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    if not os.getenv("GEMINI_API_KEY"):
-        return {
-            "analysis": "Set GEMINI_API_KEY in backend/.env to enable root cause analysis."
-        }
+    if not os.getenv("GROQ_API_KEY"):
+        return {"analysis": "Set GROQ_API_KEY in Render environment variables to enable root cause analysis."}
 
     try:
         import pandas as pd
+        from groq import Groq
+
         df = pd.read_csv(csv_path)
         schema = _schema_cache.get(req.session_id) or detect_schema(req.session_id)
 
         col_summary = "\n".join(
-            f"  - {c['name']}: {df[c['name']].describe().to_dict() if c['name'] in df.columns else 'N/A'}"
+            f"  - {c['name']}: mean={df[c['name']].mean():.2f}, min={df[c['name']].min():.2f}, max={df[c['name']].max():.2f}"
             for c in schema["columns"][:10]
+            if c["name"] in df.columns and c["type"] == "numeric"
         )
 
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        prompt = f"""A startup founder asks: 'Why did {req.column} change?'
 
-        prompt = f"""You are a data analyst. A startup founder is asking "Why did {req.column} change?"
-
-Dataset summary (column statistics):
+Dataset statistics:
 {col_summary}
 
 Chart context: {req.chart_context}
 
-Provide 2-3 possible reasons for the change in {req.column}, based on correlations with other columns.
-Be specific and actionable. Use simple language. Start each reason with a number (1., 2., 3.)."""
+Provide 2-3 specific, actionable reasons based on correlations with other columns.
+Use simple language. Start each with a number (1., 2., 3.)."""
 
-        response = model.generate_content(prompt)
-        return {"analysis": response.text.strip()}
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are an expert data analyst."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_completion_tokens=1200,
+            top_p=1,
+            stream=False,
+        )
+        return {"analysis": response.choices[0].message.content.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Root cause analysis failed: {str(e)}")

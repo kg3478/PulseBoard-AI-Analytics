@@ -1,25 +1,18 @@
 """
-insights.py — LLM-powered weekly insight summary generation.
-Uses gemini-2.0-flash with fallback to gemini-1.5-pro.
+insights.py — Weekly insight summary using Groq (llama-3.3-70b-versatile).
 """
 
 import os
-import time
 import pandas as pd
 import numpy as np
-import google.generativeai as genai
+from groq import Groq
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-
-_MODEL_NAME = "gemini-2.0-flash"
-
-
-def _get_model():
-    return genai.GenerativeModel(_MODEL_NAME)
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
+_MODEL = "llama-3.3-70b-versatile"
 
 
 def _compute_metric_deltas(csv_path: Path) -> dict:
@@ -69,7 +62,6 @@ def _compute_metric_deltas(csv_path: Path) -> dict:
 
 
 def generate_weekly_insights(csv_path: Path) -> dict:
-    """Generate 3-5 weekly insight bullets using Gemini with model fallback."""
     deltas = _compute_metric_deltas(csv_path)
 
     delta_text = "Metric | This Week | Last Week | Change\n" + "-" * 55 + "\n"
@@ -77,12 +69,12 @@ def generate_weekly_insights(csv_path: Path) -> dict:
         pct_str = f"{vals['pct_change']:+.1f}%" if vals["pct_change"] is not None else "N/A"
         delta_text += f"{col} | {vals['this_week']} | {vals['last_week']} | {pct_str}\n"
 
-    prompt = f"""You are a growth analyst advising a non-technical startup founder.
-Here is this week's metrics change summary:
+    prompt = f"""Here is this week's metrics change summary for a startup:
 
 {delta_text}
 
-Write 3-5 bullet point insights in plain English. Rules:
+Write 3-5 bullet point insights in plain English for a non-technical founder.
+Rules:
 1. Start with the most actionable finding.
 2. Include specific numbers and percentages.
 3. Flag any concerning trends clearly.
@@ -93,18 +85,19 @@ Write 3-5 bullet point insights in plain English. Rules:
 Return ONLY the bullet points, nothing else."""
 
     try:
-        model = _get_model()
-        response = model.generate_content(
-            prompt,
-            generation_config={"temperature": 0.4, "max_output_tokens": 512},
-            request_options={"timeout": 30},
+        response = _client.chat.completions.create(
+            model=_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a growth analyst advising a non-technical startup founder."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_completion_tokens=512,
+            top_p=1,
+            stream=False,
         )
-        raw = response.text.strip()
-        bullets = [
-            line.strip().lstrip("-•*").strip()
-            for line in raw.split("\n")
-            if line.strip()
-        ]
+        raw = response.choices[0].message.content.strip()
+        bullets = [line.strip().lstrip("-•*").strip() for line in raw.split("\n") if line.strip()]
         return {"bullets": bullets[:5], "deltas": deltas}
     except Exception as e:
         return {
