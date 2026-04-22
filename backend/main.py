@@ -32,16 +32,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS — explicit origins required when credentials are used
+# CORS — wildcard with credentials=False is valid and simplest
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-        "https://pulse-board-ai-analytics.vercel.app",
-        "https://pulse-board-ai-analytics-git-main-kg3478s-projects.vercel.app",
-    ],
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -221,7 +215,17 @@ async def root_cause_analysis(req: RootCauseRequest):
         )
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Use current supported models with fallback
+        _rc_models = ["gemini-2.0-flash", "gemini-1.5-flash-8b"]
+        model = None
+        for _m in _rc_models:
+            try:
+                model = genai.GenerativeModel(_m)
+                break
+            except Exception:
+                continue
+        if model is None:
+            raise Exception("No available Gemini model found")
 
         prompt = f"""You are a data analyst. A startup founder is asking "Why did {req.column} change?"
 

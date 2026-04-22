@@ -14,7 +14,7 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
 
 # Model cascade: newest first, fallback on 404/unavailable
-_MODELS = ["gemini-2.0-flash", "gemini-1.5-pro"]
+_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-8b"]
 
 
 def _get_model(model_name: str):
