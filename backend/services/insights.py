@@ -15,11 +15,11 @@ load_dotenv()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
 
-_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-8b"]
+_MODEL_NAME = "gemini-2.0-flash"
 
 
-def _get_model(model_name: str):
-    return genai.GenerativeModel(model_name)
+def _get_model():
+    return genai.GenerativeModel(_MODEL_NAME)
 
 
 def _compute_metric_deltas(csv_path: Path) -> dict:
@@ -92,31 +92,22 @@ Write 3-5 bullet point insights in plain English. Rules:
 
 Return ONLY the bullet points, nothing else."""
 
-    last_error = None
-    for model_name in _MODELS:
-        try:
-            model = _get_model(model_name)
-            response = model.generate_content(
-                prompt,
-                generation_config={"temperature": 0.4, "max_output_tokens": 512},
-                request_options={"timeout": 30},
-            )
-            raw = response.text.strip()
-            bullets = [
-                line.strip().lstrip("-•*").strip()
-                for line in raw.split("\n")
-                if line.strip()
-            ]
-            return {"bullets": bullets[:5], "deltas": deltas}
-        except Exception as e:
-            last_error = e
-            err_str = str(e).lower()
-            if any(x in err_str for x in ["404", "not found", "deprecated", "quota", "unavailable"]):
-                time.sleep(0.5)
-                continue
-            break
-
-    return {
-        "bullets": [f"⚠️ Could not generate insights: {str(last_error)}"],
-        "deltas": deltas,
-    }
+    try:
+        model = _get_model()
+        response = model.generate_content(
+            prompt,
+            generation_config={"temperature": 0.4, "max_output_tokens": 512},
+            request_options={"timeout": 30},
+        )
+        raw = response.text.strip()
+        bullets = [
+            line.strip().lstrip("-•*").strip()
+            for line in raw.split("\n")
+            if line.strip()
+        ]
+        return {"bullets": bullets[:5], "deltas": deltas}
+    except Exception as e:
+        return {
+            "bullets": [f"⚠️ Insight generation failed: {str(e)}"],
+            "deltas": deltas,
+        }

@@ -14,11 +14,11 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
 
 # Model cascade: newest first, fallback on 404/unavailable
-_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-8b"]
+_MODEL_NAME = "gemini-2.0-flash"
 
 
-def _get_model(model_name: str):
-    return genai.GenerativeModel(model_name)
+def _get_model():
+    return genai.GenerativeModel(_MODEL_NAME)
 
 
 def _build_system_prompt(schema: dict) -> str:
@@ -65,26 +65,16 @@ def nl_to_sql(question: str, schema: dict, previous_error: str = None) -> str:
     full_prompt = f"{system_prompt}\n\nUser: {user_message}"
 
     last_error = None
-    for model_name in _MODELS:
-        try:
-            model = _get_model(model_name)
-            response = model.generate_content(
-                full_prompt,
-                generation_config={"temperature": 0.1, "max_output_tokens": 512},
-                request_options={"timeout": 30},
-            )
-            return _extract_sql(response.text)
-        except Exception as e:
-            last_error = e
-            err_str = str(e).lower()
-            # Only try fallback on model-not-found / quota errors
-            if any(x in err_str for x in ["404", "not found", "deprecated", "quota", "unavailable"]):
-                time.sleep(0.5)
-                continue
-            # Other errors (network, auth) — raise immediately
-            raise
-
-    raise Exception(f"All Gemini models failed. Last error: {last_error}")
+    try:
+        model = _get_model()
+        response = model.generate_content(
+            full_prompt,
+            generation_config={"temperature": 0.1, "max_output_tokens": 512},
+            request_options={"timeout": 30},
+        )
+        return _extract_sql(response.text)
+    except Exception as e:
+        raise Exception(f"Gemini ({_MODEL_NAME}) failed: {e}")
 
 
 def nl_to_sql_with_retry(question: str, schema: dict, executor) -> dict:

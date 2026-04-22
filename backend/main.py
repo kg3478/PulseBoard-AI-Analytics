@@ -215,17 +215,7 @@ async def root_cause_analysis(req: RootCauseRequest):
         )
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        # Use current supported models with fallback
-        _rc_models = ["gemini-2.0-flash", "gemini-1.5-flash-8b"]
-        model = None
-        for _m in _rc_models:
-            try:
-                model = genai.GenerativeModel(_m)
-                break
-            except Exception:
-                continue
-        if model is None:
-            raise Exception("No available Gemini model found")
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
         prompt = f"""You are a data analyst. A startup founder is asking "Why did {req.column} change?"
 
