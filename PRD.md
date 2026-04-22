@@ -35,7 +35,7 @@ Early-stage founders possess rich data (Stripe, Shopify, Google Analytics) but l
 
 ### Feature 2: NL-to-SQL Query Interface
 - **User Story:** As a founder, I want to type "Show me revenue by city" and get a chart instantly.
-- **Requirement:** Use LLM to translate English to SQL. Must handle simple aggregations, grouping, and time-series filtering. Must include a self-healing retry loop if the SQL fails.
+- **Requirement:** Use Groq API (LLaMA 3.3 70B) to translate English to SQL. Must handle simple aggregations, grouping, and time-series filtering. Must include a self-healing retry loop if the SQL fails.
 
 ### Feature 3: Auto-Charting
 - **User Story:** As a founder, I don't want to configure X and Y axes. I just want the data visualized perfectly.
@@ -51,7 +51,7 @@ Early-stage founders possess rich data (Stripe, Shopify, Google Analytics) but l
 
 ### Feature 5: AI Narrative Insights
 - **User Story:** As a founder, I want a quick summary of my business health every Monday morning.
-- **Requirement:** Compute week-over-week deltas and feed them to an LLM to generate 3-5 actionable, plain-English bullet points.
+- **Requirement:** Compute week-over-week deltas and feed them to Groq (LLaMA 3.3) to generate 3-5 actionable, plain-English bullet points.
 
 ## 6. Out of Scope (Non-Goals)
 - We are **not** building a Data Warehouse. No persistent storage of data across sessions in V1.

@@ -12,23 +12,31 @@ This journal documents the critical technical and product decisions made during 
 
 ### 🏆 The Winner: DuckDB
 **The PM Rationale:**
-Our North Star Metric is *Time-to-First-Insight*. Forcing a non-technical founder to wait for a backend ETL process to load their 50MB Stripe export into a Postgres database introduces friction, latency, and massive backend infrastructure costs. 
+Our North Star Metric is *Time-to-First-Insight*. Forcing a non-technical founder to wait for a backend ETL process to load their 50MB Stripe export into a Postgres database introduces friction, latency, and massive backend infrastructure costs.
 
 DuckDB allows us to execute SQL *directly* against the uploaded CSV in memory with zero setup. It is blazing fast and completely stateless, which drastically simplifies our MVP architecture and keeps cloud costs near zero. It perfectly aligns with our goal of "under 4 minutes to insight."
 
 ---
 
 ## Decision 2: LLM Selection for NL-to-SQL
-### 🥊 The Contenders: OpenAI GPT-4 vs. Google Gemini 1.5 Flash
+### 🥊 The Contenders: OpenAI GPT-4 vs. Google Gemini 1.5 Flash vs. Groq + LLaMA 3.3
 
-- **Option A (GPT-4o):** The most capable model on the market for coding and SQL generation. High accuracy, but expensive and relatively slow.
-- **Option B (Gemini 1.5 Flash):** Google's lightweight, high-speed model with a massive context window. Highly cost-effective (free tier available).
+- **Option A (GPT-4o):** The most capable model for coding and SQL generation. High accuracy, but expensive and relatively slow.
+- **Option B (Gemini 1.5 Flash):** Google's lightweight, high-speed model with a massive context window. Initially selected for its free tier and speed.
+- **Option C (Groq API + LLaMA 3.3 70B):** Groq's proprietary LPU hardware delivers the fastest LLM inference available (~300 tokens/second). Open-weight model, no vendor lock-in, free tier available.
 
-### 🏆 The Winner: Gemini 1.5 Flash
+### 🏆 The Winner: Groq API + LLaMA 3.3 70B Versatile
 **The PM Rationale:**
-While GPT-4 might offer slightly higher out-of-the-box accuracy on complex JOINs, PulseBoard's target persona (startup founders) is asking relatively simple aggregation questions on single-table CSVs ("What is MRR by city?"). 
+PulseBoard initially launched with Gemini 1.5 Flash. However, Google deprecated the `gemini-1.5-flash` and `gemini-1.5-pro` models from the v1beta API without backward compatibility, causing 404 errors in production and breaking the core Ask query feature entirely.
 
-In analytics products, **latency is UX**. Users will not wait 15 seconds for a chart to load. Gemini 1.5 Flash returns the SQL in under 2 seconds. Furthermore, its massive context window allows us to inject the *entire dataset schema* and numerous few-shot examples into the prompt without blowing up the API budget. To mitigate any accuracy drop-off vs GPT-4, I designed a **Self-Correction Retry Loop**: if DuckDB throws a SQL syntax error, the backend feeds the error back to Gemini to fix it before the user ever sees it. This architectural choice gave us GPT-4 level reliability at Flash level speed and cost.
+**This was a critical production incident that informed a key PM decision: avoid API vendor lock-in for mission-critical inference paths.**
+
+The migration to Groq delivered three compounding benefits:
+1. **Reliability:** Groq maintains stable model availability with clear deprecation timelines.
+2. **Speed:** LLaMA 3.3 70B on Groq's LPU hardware produces SQL in ~0.8 seconds — faster than Gemini Flash.
+3. **Cost:** Free tier covers all demo and portfolio traffic with generous rate limits.
+
+The self-correction retry loop architecture (if SQL fails, feed error back to LLM) was preserved unchanged, proving the value of decoupling business logic from the AI provider — a key resilience pattern.
 
 ---
 
@@ -40,8 +48,8 @@ In analytics products, **latency is UX**. Users will not wait 15 seconds for a c
 
 ### 🏆 The Winner: Statistical Z-Score
 **The PM Rationale:**
-"Don't use ML when Math will do." 
-Founders don't trust black-box AI models that flag anomalies without explanation. Z-score is mathematically deterministic and highly explainable. We can explicitly tell the user: *"Your refund rate is 2.4 standard deviations above your 30-day average."* 
+"Don't use ML when Math will do."
+Founders don't trust black-box AI models that flag anomalies without explanation. Z-score is mathematically deterministic and highly explainable. We can explicitly tell the user: *"Your refund rate is 2.4 standard deviations above your 30-day average."*
 
 Furthermore, training an ML model on a user's uploaded 90-day CSV is computationally expensive and overkill. Z-score requires zero training time, executes in milliseconds via NumPy, and immediately solves the user's pain point of "tell me if something breaks."
 
@@ -58,3 +66,18 @@ Furthermore, training an ML model on a user's uploaded 90-day CSV is computation
 We are explicitly building an "Anti-BI Tool." If we provide a drag-and-drop dashboard builder, we are forcing the founder to act as an analyst. They don't want to choose between a Bar chart and a Scatter plot—they just want to know why CAC is up.
 
 By restricting the UI to a search bar and 10 pre-built metric templates, we remove cognitive load. The system takes on the burden of choosing the visualization (via the `Chart.jsx` auto-selection logic). This deliberate constraint ensures the product remains simple enough for our target persona, differentiating us entirely from traditional BI competitors.
+
+---
+
+## Decision 5: Frontend Session State Management
+### 🥊 The Contenders: URL State vs. React Context vs. useRef + sessionStorage
+
+- **Option A (URL params):** Encode session_id in the URL. Simple but exposes implementation details and breaks on browser navigation.
+- **Option B (React Context):** Global state provider. Elegant but requires re-renders and suffers the same race condition as useState.
+- **Option C (useRef + sessionStorage):** Synchronous ref write before navigation, with sessionStorage for page reload recovery.
+
+### 🏆 The Winner: useRef + sessionStorage
+**The PM Rationale:**
+React's `useState` updates are asynchronous — they batch and apply after the current render. When a user clicks "Start Analyzing" immediately after a successful upload, the router guard evaluates `session` state before the async update propagates, causing a redirect loop back to the upload page.
+
+The fix: write the session to a `useRef` **synchronously** before calling `setSession`, then use that ref in the route guard. The ref is always current, regardless of render cycle. `sessionStorage` adds resilience for page refreshes. This pattern — synchronous ref + async state — is a production-grade React session management technique that demonstrates deep understanding of the React rendering lifecycle.
