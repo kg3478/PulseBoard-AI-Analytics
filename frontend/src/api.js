@@ -1,85 +1,59 @@
 /**
- * api.js — Centralized API client for PulseBoard backend.
- * All fetch calls go through here. Backend URL is configured via VITE_API_URL env var.
- * Includes a timeout to handle Render free-tier cold starts (up to 50s).
+ * api.js — Stateless API client. Backend runs as Vercel serverless functions
+ * at /api/* on the same domain — no CORS, no Render, no env vars needed.
+ * CSV content is sent with every request instead of using server-side sessions.
  */
-
-const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-
-// Render free tier can take up to 50s to cold-start — we allow 60s
-async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(id);
-    return res;
-  } catch (err) {
-    clearTimeout(id);
-    if (err.name === 'AbortError') {
-      throw new Error('Request timed out. The backend may be cold-starting — please try again in 30 seconds.');
-    }
-    throw new Error(`Cannot reach backend at ${BASE_URL}. Make sure VITE_API_URL is set correctly on Vercel.`);
-  }
-}
 
 async function handleResponse(res) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.detail || data.error || `HTTP ${res.status}`);
-  }
+  if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
   return data;
 }
 
-/**
- * Upload a CSV file to the backend.
- */
+/** Upload CSV — returns schema, starter questions, and csv_content for client storage */
 export async function uploadCSV(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetchWithTimeout(`${BASE_URL}/upload`, {
+  const res = await fetch('/api/upload', { method: 'POST', body: formData });
+  return handleResponse(res);
+}
+
+/** Run NL query — sends csv_content + schema with every request (stateless) */
+export async function runQuery(sessionId, question, csvContent, schema) {
+  const res = await fetch('/api/query', {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, csv_content: csvContent, schema }),
   });
   return handleResponse(res);
 }
 
-/**
- * Run a natural language query against the uploaded data.
- */
-export async function runQuery(sessionId, question) {
-  const res = await fetchWithTimeout(`${BASE_URL}/query`, {
+/** Get anomaly alerts — sends csv_content */
+export async function getAnomalies(sessionId, csvContent) {
+  const res = await fetch('/api/anomalies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, question }),
+    body: JSON.stringify({ csv_content: csvContent }),
   });
   return handleResponse(res);
 }
 
-/**
- * Fetch anomaly alerts for the session.
- */
-export async function getAnomalies(sessionId) {
-  const res = await fetchWithTimeout(`${BASE_URL}/anomalies/${sessionId}`);
-  return handleResponse(res);
-}
-
-/**
- * Fetch LLM-generated weekly insight bullets.
- */
-export async function getInsights(sessionId) {
-  const res = await fetchWithTimeout(`${BASE_URL}/insights/${sessionId}`);
-  return handleResponse(res);
-}
-
-/**
- * Run root cause analysis for a specific metric.
- */
-export async function getRootCause(sessionId, column, chartContext = '') {
-  const res = await fetchWithTimeout(`${BASE_URL}/root-cause`, {
+/** Get AI weekly insight bullets — sends csv_content */
+export async function getInsights(sessionId, csvContent) {
+  const res = await fetch('/api/insights', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, column, chart_context: chartContext }),
+    body: JSON.stringify({ csv_content: csvContent }),
+  });
+  return handleResponse(res);
+}
+
+/** Root cause analysis for a specific metric */
+export async function getRootCause(sessionId, column, csvContent) {
+  const res = await fetch('/api/root-cause', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ column, csv_content: csvContent }),
   });
   return handleResponse(res);
 }

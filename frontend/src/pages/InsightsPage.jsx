@@ -8,7 +8,7 @@ import AnomalyCard from '../components/AnomalyCard';
  * InsightsPage — Weekly AI insights + anomaly alerts.
  */
 export default function InsightsPage({ session }) {
-  const { sessionId } = session;
+  const { sessionId, csvContent } = session;
 
   const [insights, setInsights] = useState(null);
   const [anomalies, setAnomalies] = useState(null);
@@ -21,7 +21,7 @@ export default function InsightsPage({ session }) {
     setInsightsLoading(true);
     setInsightsError('');
     try {
-      const data = await getInsights(sessionId);
+      const data = await getInsights(sessionId, csvContent);
       setInsights(data);
     } catch (e) {
       setInsightsError(e.message);
@@ -33,7 +33,7 @@ export default function InsightsPage({ session }) {
   const loadAnomalies = async () => {
     setAnomaliesLoading(true);
     try {
-      const data = await getAnomalies(sessionId);
+      const data = await getAnomalies(sessionId, csvContent);
       setAnomalies(data);
     } catch (e) {
       setAnomalies({ alerts: [], total: 0 });
