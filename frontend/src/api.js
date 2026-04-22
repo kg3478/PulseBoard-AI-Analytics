@@ -1,8 +1,21 @@
 /**
- * api.js — Stateless API client. Backend runs as Vercel serverless functions
- * at /api/* on the same domain — no CORS, no Render, no env vars needed.
- * CSV content is sent with every request instead of using server-side sessions.
+ * api.js — PulseBoard API client calling Render backend.
  */
+const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+async function fetchWithTimeout(url, options = {}, ms = 55000) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { ...options, signal: ctrl.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    if (err.name === 'AbortError') throw new Error('Backend is warming up (Render free tier). Please wait 30s and try again.');
+    throw new Error('Cannot connect to backend. Make sure VITE_API_URL is set on Vercel and the Render service is running.');
+  }
+}
 
 async function handleResponse(res) {
   const data = await res.json().catch(() => ({}));
@@ -10,50 +23,37 @@ async function handleResponse(res) {
   return data;
 }
 
-/** Upload CSV — returns schema, starter questions, and csv_content for client storage */
 export async function uploadCSV(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch('/api/upload', { method: 'POST', body: formData });
+  const res = await fetchWithTimeout(`${BASE_URL}/upload`, { method: 'POST', body: formData });
   return handleResponse(res);
 }
 
-/** Run NL query — sends csv_content + schema with every request (stateless) */
-export async function runQuery(sessionId, question, csvContent, schema) {
-  const res = await fetch('/api/query', {
+export async function runQuery(sessionId, question) {
+  const res = await fetchWithTimeout(`${BASE_URL}/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, csv_content: csvContent, schema }),
+    body: JSON.stringify({ session_id: sessionId, question }),
   });
   return handleResponse(res);
 }
 
-/** Get anomaly alerts — sends csv_content */
-export async function getAnomalies(sessionId, csvContent) {
-  const res = await fetch('/api/anomalies', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ csv_content: csvContent }),
-  });
+export async function getAnomalies(sessionId) {
+  const res = await fetchWithTimeout(`${BASE_URL}/anomalies/${sessionId}`);
   return handleResponse(res);
 }
 
-/** Get AI weekly insight bullets — sends csv_content */
-export async function getInsights(sessionId, csvContent) {
-  const res = await fetch('/api/insights', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ csv_content: csvContent }),
-  });
+export async function getInsights(sessionId) {
+  const res = await fetchWithTimeout(`${BASE_URL}/insights/${sessionId}`);
   return handleResponse(res);
 }
 
-/** Root cause analysis for a specific metric */
-export async function getRootCause(sessionId, column, csvContent) {
-  const res = await fetch('/api/root-cause', {
+export async function getRootCause(sessionId, column, chartContext = '') {
+  const res = await fetchWithTimeout(`${BASE_URL}/root-cause`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ column, csv_content: csvContent }),
+    body: JSON.stringify({ session_id: sessionId, column, chart_context: chartContext }),
   });
   return handleResponse(res);
 }

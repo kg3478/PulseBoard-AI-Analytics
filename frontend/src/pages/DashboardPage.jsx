@@ -10,7 +10,7 @@ import TemplateBar from '../components/TemplateBar';
  * Shows: query bar → SQL (collapsible) → chart → root cause button.
  */
 export default function DashboardPage({ session }) {
-  const { sessionId, schema, starterQuestions, csvContent } = session;
+  const { sessionId, schema, starterQuestions } = session;
 
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,7 +37,7 @@ export default function DashboardPage({ session }) {
     setQuestion(trimmed);
 
     try {
-      const data = await runQuery(sessionId, trimmed, csvContent, schema);
+      const data = await runQuery(sessionId, trimmed);
       setResult(data);
     } catch (e) {
       setError(e.message || 'Query failed. Try rephrasing your question.');
@@ -52,7 +52,8 @@ export default function DashboardPage({ session }) {
     setRootCauseText('');
     try {
       const col = result.result?.columns?.[1]?.name || result.result?.columns?.[0]?.name || '';
-      const data = await getRootCause(sessionId, col, csvContent);
+      const context = `Question: ${result.question}. Chart type: ${result.result?.chart_type}`;
+      const data = await getRootCause(sessionId, col, context);
       setRootCauseText(data.analysis);
     } catch (e) {
       setRootCauseText('Root cause analysis failed. Make sure your GEMINI_API_KEY is set.');
