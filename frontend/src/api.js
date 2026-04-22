@@ -1,12 +1,30 @@
 /**
  * api.js — Centralized API client for PulseBoard backend.
- * All fetch calls go through here. Backend URL is configured via env var.
+ * All fetch calls go through here. Backend URL is configured via VITE_API_URL env var.
+ * Includes a timeout to handle Render free-tier cold starts (up to 50s).
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+// Render free tier can take up to 50s to cold-start — we allow 60s
+async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. The backend may be cold-starting — please try again in 30 seconds.');
+    }
+    throw new Error(`Cannot reach backend at ${BASE_URL}. Make sure VITE_API_URL is set correctly on Vercel.`);
+  }
+}
 
 async function handleResponse(res) {
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.detail || data.error || `HTTP ${res.status}`);
   }
@@ -15,14 +33,11 @@ async function handleResponse(res) {
 
 /**
  * Upload a CSV file to the backend.
- * @param {File} file
- * @returns {Promise<{session_id, schema, starter_questions, row_count, filename}>}
  */
 export async function uploadCSV(file) {
   const formData = new FormData();
   formData.append('file', file);
-
-  const res = await fetch(`${BASE_URL}/upload`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -31,12 +46,9 @@ export async function uploadCSV(file) {
 
 /**
  * Run a natural language query against the uploaded data.
- * @param {string} sessionId
- * @param {string} question
- * @returns {Promise<{success, sql, result, attempts, question}>}
  */
 export async function runQuery(sessionId, question) {
-  const res = await fetch(`${BASE_URL}/query`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, question }),
@@ -46,33 +58,25 @@ export async function runQuery(sessionId, question) {
 
 /**
  * Fetch anomaly alerts for the session.
- * @param {string} sessionId
- * @returns {Promise<{alerts: Array, total: number}>}
  */
 export async function getAnomalies(sessionId) {
-  const res = await fetch(`${BASE_URL}/anomalies/${sessionId}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/anomalies/${sessionId}`);
   return handleResponse(res);
 }
 
 /**
  * Fetch LLM-generated weekly insight bullets.
- * @param {string} sessionId
- * @returns {Promise<{bullets: string[], deltas: object}>}
  */
 export async function getInsights(sessionId) {
-  const res = await fetch(`${BASE_URL}/insights/${sessionId}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/insights/${sessionId}`);
   return handleResponse(res);
 }
 
 /**
  * Run root cause analysis for a specific metric.
- * @param {string} sessionId
- * @param {string} column
- * @param {string} chartContext
- * @returns {Promise<{analysis: string}>}
  */
 export async function getRootCause(sessionId, column, chartContext = '') {
-  const res = await fetch(`${BASE_URL}/root-cause`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/root-cause`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, column, chart_context: chartContext }),

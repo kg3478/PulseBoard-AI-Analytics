@@ -25,13 +25,16 @@ export default function UploadPage({ onUploadSuccess }) {
     try {
       const result = await uploadCSV(file);
       setUploadResult(result);
-      onUploadSuccess({
+      const sessionData = {
         sessionId: result.session_id,
         schema: result.schema,
         starterQuestions: result.starter_questions,
         filename: result.filename,
         rowCount: result.schema.row_count,
-      });
+      };
+      onUploadSuccess(sessionData);
+      // Store in sessionStorage as backup so navigation never loses it
+      sessionStorage.setItem('pulseboard_session', JSON.stringify(sessionData));
     } catch (e) {
       setError(e.message || 'Upload failed. Is the backend running?');
     } finally {
@@ -189,7 +192,7 @@ export default function UploadPage({ onUploadSuccess }) {
                 {uploadResult.starter_questions?.map((q, i) => (
                   <button
                     key={i}
-                    onClick={() => navigate('/dashboard')}
+                    onClick={() => navigate('/dashboard', { state: { prefillQuery: q } })}
                     className="w-full text-left chip flex items-center gap-2 group"
                   >
                     <Sparkles size={12} className="text-indigo-400 flex-shrink-0" />
@@ -203,7 +206,7 @@ export default function UploadPage({ onUploadSuccess }) {
                 onClick={() => navigate('/dashboard')}
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
-                Start Analyzing
+                Start Analyzing →
                 <ArrowRight size={16} />
               </button>
             </motion.div>

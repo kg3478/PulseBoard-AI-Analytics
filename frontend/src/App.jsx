@@ -7,19 +7,30 @@ import Navbar from './components/Navbar';
 
 /**
  * App.jsx — Root component.
- * Session state (sessionId + schema) is lifted here and passed down via props.
- * Routes: / → Upload  |  /dashboard → Dashboard  |  /insights → Insights
+ * Session state is lifted here and also persisted to sessionStorage
+ * so that Vercel page refreshes and client-side navigation both work correctly.
  */
 export default function App() {
-  const [session, setSession] = useState(null);
-  // session = { sessionId, schema, starterQuestions, filename, rowCount }
+  // Restore session from sessionStorage on initial load (handles Vercel refresh)
+  const [session, setSession] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('pulseboard_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleUploadSuccess = (sessionData) => {
+    setSession(sessionData);
+  };
 
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-navy-900">
         <Navbar session={session} />
         <Routes>
-          <Route path="/" element={<UploadPage onUploadSuccess={setSession} />} />
+          <Route path="/" element={<UploadPage onUploadSuccess={handleUploadSuccess} />} />
           <Route
             path="/dashboard"
             element={
