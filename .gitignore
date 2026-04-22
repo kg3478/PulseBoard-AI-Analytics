@@ -1,0 +1,18 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# Backend
+backend/venv/
+backend/__pycache__/
+backend/.env
+backend/uploads/
+*.pyc
+
+# OS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
