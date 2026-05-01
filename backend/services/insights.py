@@ -1,13 +1,15 @@
 """
-services/insights.py — Deterministic insight generation for PulseBoard.
+services/insights.py — Hybrid insight generation for PulseBoard.
 
-Consolidates insight_engine/insight_generator.py (now deleted).
-Zero external API calls. Pure pandas + template strings.
+v3.0: Hybrid mode added.
+  - Deterministic insights run first (always fast, always available)
+  - LLM insights appended when GEMINI_API_KEY is set
+  - Raw data is NEVER sent to LLM — only statistical summary
 
 Public API (unchanged):
-    generate_insights(csv_path: Path) -> dict
-        Returns: { "bullets": list[str], "deltas": dict }
-    generate_pm_insights(pm_result: dict, dataset_type: str) -> list[str]
+    generate_insights(csv_path, session_id?) -> dict
+        Returns: { "bullets": list[str], "deltas": dict, "llm_bullets": list[str] }
+    generate_pm_insights(pm_result, dataset_type) -> list[str]
 """
 
 import pandas as pd
@@ -131,14 +133,19 @@ def _find_overall_max(csv_path: Path, col: str) -> Optional[float]:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-def generate_insights(csv_path: Path) -> dict:
+def generate_insights(csv_path: Path, session_id: str = "default") -> dict:
     """
-    Generate 3–5 deterministic insight bullets + WoW metric delta table.
-    Returns: { "bullets": list[str], "deltas": dict }
+    Generate hybrid insight summary:
+      1. Deterministic WoW bullet points (always run, always fast)
+      2. LLM insight bullets appended (only when GEMINI_API_KEY is set)
+
+    Returns: { "bullets": list[str], "deltas": dict, "llm_bullets": list[str] }
+    Raw data is NEVER sent to LLM — only a compact statistical summary.
     """
     deltas = _compute_metric_deltas(csv_path)
     if not deltas:
-        return {"bullets": ["ℹ️ No numeric columns found in your data to generate insights."], "deltas": {}}
+        return {"bullets": ["ℹ️ No numeric columns found in your data to generate insights."],
+                "deltas": {}, "llm_bullets": []}
 
     try:
         df_head = pd.read_csv(csv_path, nrows=10)
@@ -153,10 +160,10 @@ def generate_insights(csv_path: Path) -> dict:
     except Exception:
         date_col = None
 
-    ranked   = sorted([(col, v) for col, v in deltas.items() if v["pct_change"] is not None],
-                      key=lambda x: abs(x[1]["pct_change"]), reverse=True)
+    ranked    = sorted([(col, v) for col, v in deltas.items() if v["pct_change"] is not None],
+                       key=lambda x: abs(x[1]["pct_change"]), reverse=True)
     no_change = [(col, v) for col, v in deltas.items() if v["pct_change"] is None]
-    bullets  = []
+    bullets   = []
 
     for col, vals in ranked[:4]:
         pct, tw, lw = vals["pct_change"], vals["this_week"], vals["last_week"]
@@ -185,10 +192,25 @@ def generate_insights(csv_path: Path) -> dict:
     if not bullets:
         bullets = ["ℹ️ Upload data with more rows to generate meaningful week-over-week insights."]
 
-    return {"bullets": bullets[:5], "deltas": deltas}
+    # ── LLM enrichment (non-blocking, graceful fallback) ─────────────────────
+    llm_bullets: list[str] = []
+    try:
+        from services.llm_router import call_llm_for_insights, llm_available
+        from services.eda import build_data_summary_for_llm
+        from services.pm_analytics import detect_dataset_type
+        if llm_available():
+            schema_stub = {"columns": [{"name": c, "type": "numeric"}
+                                       for c in list(deltas.keys())[:8]]}
+            dataset_type = detect_dataset_type(schema_stub)
+            summary      = build_data_summary_for_llm(csv_path, schema_stub)
+            llm_bullets  = call_llm_for_insights(summary, dataset_type, session_id=session_id)
+    except Exception:
+        llm_bullets = []
+
+    return {"bullets": bullets[:5], "deltas": deltas, "llm_bullets": llm_bullets}
 
 
-# Preserved for backward-compat (called from services/insights.py previously)
+# Preserved alias
 generate_weekly_insights = generate_insights
 
 

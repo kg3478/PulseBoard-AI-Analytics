@@ -2,13 +2,14 @@
 services/pm_analytics.py — PM Analytics Engine for PulseBoard.
 
 Provides product-manager-focused analytics:
-  - Dataset type detection (product / financial / marketing / generic)
-  - Smart query suggestions per dataset type
+  - Dataset type detection (product / financial / marketing / ecommerce / hr / generic)
+  - Smart query suggestions per dataset type (including EDA queries for generic)
   - DAU / WAU / MAU computation
   - Activation rate
   - Funnel analysis (sequential conversion)
   - Cohort / retention analysis
 
+v3.0: Added ecommerce + hr dataset types. Generic type now suggests EDA queries.
 Single file. No sub-packages. No external APIs. Pure pandas + regex.
 """
 
@@ -24,18 +25,27 @@ _EVENT_HINTS  = {"event","event_name","event_type","action","activity","type","e
 _TIME_HINTS   = {"timestamp","created_at","occurred_at","event_time","ts","time","datetime","event_date","date","created"}
 _FINANCIAL    = {"revenue","mrr","arr","profit","sales","income","billing","amount","ltv","arpu","gmv"}
 _MARKETING    = {"clicks","impressions","ctr","cpc","cpm","roas","spend","ad_spend","reach","conversions","leads","sessions"}
+_ECOMMERCE    = {"order_id","order","product_id","sku","quantity","unit_price","cart","checkout","shipping","discount_code"}
+_HR           = {"employee_id","employee","salary","hire_date","department","designation","headcount","attrition","tenure"}
 
 
 # ─── 1. Dataset Type Detection ───────────────────────────────────────────────
 
 def detect_dataset_type(schema: dict) -> str:
-    """Inspect schema column names and return dataset category."""
+    """
+    Inspect schema column names and return dataset category.
+    Order matters: more specific types are checked first.
+    """
     names = {c["name"].lower().replace(" ", "_") for c in schema.get("columns", [])}
     has_user  = bool(names & _USER_HINTS)
     has_event = bool(names & _EVENT_HINTS)
     has_time  = bool(names & _TIME_HINTS)
     if has_user and (has_event or has_time):
         return "product_analytics"
+    if names & _HR:
+        return "hr"
+    if names & _ECOMMERCE:
+        return "ecommerce"
     if names & _FINANCIAL:
         return "financial"
     if names & _MARKETING:
@@ -84,12 +94,29 @@ def suggest_pm_queries(dataset_type: str, schema: dict) -> list[str]:
             "Cost per click by campaign",
             "ROAS by ad group",
         ]
+    if dataset_type == "ecommerce":
+        return [
+            f"Top 10 products by revenue",
+            f"Orders trend over time",
+            f"Average order value by {d}",
+            f"Total {m} last month",
+            f"Which {d} has the most orders?",
+        ]
+    if dataset_type == "hr":
+        return [
+            f"Average salary by department",
+            f"Headcount by department",
+            f"Show me attrition trend over time",
+            f"Top 10 departments by {m}",
+            f"What is the average tenure?",
+        ]
+    # generic — mix of SQL and EDA queries
     return [
         f"Show me {m} by {d}",
         f"Top 10 {d} by {m}",
-        f"{m} trend over time",
-        f"Average {m}",
-        "Show me the top 10 rows",
+        "Summarize this dataset",
+        "What are the correlations?",
+        "Show me outliers",
     ]
 
 

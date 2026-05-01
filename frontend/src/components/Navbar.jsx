@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart2, Sparkles, Upload, Zap } from 'lucide-react';
+import { BarChart2, Sparkles, FlaskConical, Zap } from 'lucide-react';
 
 export default function Navbar({ session }) {
   const navigate = useNavigate();
@@ -23,6 +23,7 @@ export default function Navbar({ session }) {
           <div className="flex items-center gap-1">
             <NavLink
               to="/dashboard"
+              id="nav-dashboard"
               className={({ isActive }) =>
                 `nav-link flex items-center gap-2 px-4 py-2 rounded-xl ${isActive ? 'active bg-indigo-500/10' : ''}`
               }
@@ -31,7 +32,18 @@ export default function Navbar({ session }) {
               Dashboard
             </NavLink>
             <NavLink
+              to="/eda"
+              id="nav-eda"
+              className={({ isActive }) =>
+                `nav-link flex items-center gap-2 px-4 py-2 rounded-xl ${isActive ? 'active bg-indigo-500/10' : ''}`
+              }
+            >
+              <FlaskConical size={15} />
+              EDA
+            </NavLink>
+            <NavLink
               to="/insights"
+              id="nav-insights"
               className={({ isActive }) =>
                 `nav-link flex items-center gap-2 px-4 py-2 rounded-xl ${isActive ? 'active bg-indigo-500/10' : ''}`
               }
@@ -52,7 +64,7 @@ export default function Navbar({ session }) {
               <span>{session.rowCount?.toLocaleString()} rows</span>
             </div>
           ) : (
-            <span className="text-xs text-slate-600 font-mono">v1.0</span>
+            <span className="text-xs text-slate-600 font-mono">v3.0</span>
           )}
         </div>
       </div>

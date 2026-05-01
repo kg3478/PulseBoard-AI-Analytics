@@ -1,22 +1,21 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useRef } from 'react';
-import UploadPage from './pages/UploadPage';
+import UploadPage    from './pages/UploadPage';
 import DashboardPage from './pages/DashboardPage';
-import InsightsPage from './pages/InsightsPage';
-import Navbar from './components/Navbar';
+import InsightsPage  from './pages/InsightsPage';
+import EDAPage       from './pages/EDAPage';
+import Navbar        from './components/Navbar';
 
 /**
  * App.jsx — Root component.
- * Uses a ref alongside state so the route guard always sees the LATEST session
- * even before React re-renders (fixes the navigate-before-setState race condition).
+ * v3.0: Added /eda route. Session now carries datasetType for child pages.
  */
 export default function App() {
   const sessionRef = useRef(null);
 
-  // Restore from sessionStorage on mount
   const [session, setSession] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('pulseboard_session');
+      const saved  = sessionStorage.getItem('pulseboard_session');
       const parsed = saved ? JSON.parse(saved) : null;
       if (parsed) sessionRef.current = parsed;
       return parsed;
@@ -26,13 +25,11 @@ export default function App() {
   });
 
   const handleUploadSuccess = (sessionData) => {
-    // Write to ref FIRST (synchronous) so route guard sees it immediately
     sessionRef.current = sessionData;
     sessionStorage.setItem('pulseboard_session', JSON.stringify(sessionData));
     setSession(sessionData);
   };
 
-  // Route guard: checks ref (synchronous) OR state — whichever is available first
   const getSession = () => sessionRef.current || session;
 
   return (
@@ -43,19 +40,15 @@ export default function App() {
           <Route path="/" element={<UploadPage onUploadSuccess={handleUploadSuccess} />} />
           <Route
             path="/dashboard"
-            element={
-              getSession()
-                ? <DashboardPage session={getSession()} />
-                : <Navigate to="/" replace />
-            }
+            element={getSession() ? <DashboardPage session={getSession()} /> : <Navigate to="/" replace />}
           />
           <Route
             path="/insights"
-            element={
-              getSession()
-                ? <InsightsPage session={getSession()} />
-                : <Navigate to="/" replace />
-            }
+            element={getSession() ? <InsightsPage session={getSession()} /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/eda"
+            element={getSession() ? <EDAPage session={getSession()} /> : <Navigate to="/" replace />}
           />
         </Routes>
       </div>

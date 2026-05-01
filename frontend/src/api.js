@@ -1,5 +1,6 @@
 /**
- * api.js — PulseBoard API client calling Render backend.
+ * api.js — PulseBoard API client.
+ * v3.0: Added getEDA() and getLLMInsights() for hybrid intelligence features.
  */
 const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -13,7 +14,7 @@ async function fetchWithTimeout(url, options = {}, ms = 55000) {
   } catch (err) {
     clearTimeout(id);
     if (err.name === 'AbortError') throw new Error('Backend is warming up (Render free tier). Please wait 30s and try again.');
-    throw new Error('Cannot connect to backend. Make sure VITE_API_URL is set on Vercel and the Render service is running.');
+    throw new Error('Cannot connect to backend. Make sure VITE_API_URL is set and the backend is running.');
   }
 }
 
@@ -54,6 +55,22 @@ export async function getRootCause(sessionId, column, chartContext = '') {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, column, chart_context: chartContext }),
+  });
+  return handleResponse(res);
+}
+
+/** Full EDA profile: column stats, correlations, distributions, missing, outliers. */
+export async function getEDA(sessionId) {
+  const res = await fetchWithTimeout(`${BASE_URL}/eda/${sessionId}`);
+  return handleResponse(res);
+}
+
+/** On-demand LLM insight bullets from a statistical data summary (no raw data sent). */
+export async function getLLMInsights(sessionId) {
+  const res = await fetchWithTimeout(`${BASE_URL}/llm-insights`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
   });
   return handleResponse(res);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Loader2, TrendingUp, TrendingDown, ThumbsUp, ThumbsDown, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Sparkles, Loader2, TrendingUp, TrendingDown, ThumbsUp, ThumbsDown, RefreshCw, AlertTriangle, Brain, Zap } from 'lucide-react';
 import { getInsights, getAnomalies } from '../api';
 import AnomalyCard from '../components/AnomalyCard';
 
@@ -10,12 +10,12 @@ import AnomalyCard from '../components/AnomalyCard';
 export default function InsightsPage({ session }) {
   const { sessionId } = session;
 
-  const [insights, setInsights] = useState(null);
-  const [anomalies, setAnomalies] = useState(null);
+  const [insights, setInsights]             = useState(null);
+  const [anomalies, setAnomalies]           = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [anomaliesLoading, setAnomaliesLoading] = useState(true);
-  const [insightsError, setInsightsError] = useState('');
-  const [feedback, setFeedback] = useState({}); // bullet index → 'up' | 'down'
+  const [insightsError, setInsightsError]   = useState('');
+  const [feedback, setFeedback]             = useState({});
 
   const loadInsights = async () => {
     setInsightsLoading(true);
@@ -144,7 +144,7 @@ export default function InsightsPage({ session }) {
       <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
         <div className="flex items-center gap-2 mb-4">
           <Sparkles size={16} className="text-indigo-400" />
-          <h2 className="text-base font-semibold text-white">Weekly AI Summary</h2>
+          <h2 className="text-base font-semibold text-white">Weekly Summary</h2>
           <button
             id="refresh-insights-btn"
             onClick={loadInsights}
@@ -196,6 +196,38 @@ export default function InsightsPage({ session }) {
           </div>
         )}
       </motion.section>
+
+      {/* AI-Generated Insights (LLM bullets from Gemini) */}
+      {!insightsLoading && insights?.llm_bullets?.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Brain size={16} className="text-violet-400" />
+            <h2 className="text-base font-semibold text-white">AI Insights</h2>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-400 border border-violet-500/20 ml-1">
+              <Zap size={10} /> Powered by Gemini
+            </span>
+          </div>
+          <div className="space-y-3">
+            <AnimatePresence>
+              {insights.llm_bullets.map((bullet, i) => (
+                <motion.div
+                  key={`llm-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  className="glass-card px-5 py-4 border-l-2 border-violet-500/40"
+                >
+                  <p className="text-slate-200 text-sm leading-relaxed">{bullet}</p>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </motion.section>
+      )}
     </div>
   );
 }

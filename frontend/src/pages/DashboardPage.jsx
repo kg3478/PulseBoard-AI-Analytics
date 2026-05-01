@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Loader2, ChevronDown, ChevronUp, Code2, AlertCircle, HelpCircle, RefreshCw, TrendingUp } from 'lucide-react';
+import { Send, Loader2, ChevronDown, ChevronUp, Code2, AlertCircle, HelpCircle, RefreshCw, TrendingUp, Brain, FlaskConical, Cpu } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { runQuery, getRootCause } from '../api';
 import Chart from '../components/Chart';
 import TemplateBar from '../components/TemplateBar';
 
 /**
  * DashboardPage — Core NL query interface.
- * Shows: query bar → SQL (collapsible) → chart → root cause button.
+ * v3.0: Shows source badge (rule engine / AI / EDA) and LLM explanation panel.
  */
 export default function DashboardPage({ session }) {
   const { sessionId, schema, starterQuestions } = session;
+  const navigate = useNavigate();
 
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,6 +40,11 @@ export default function DashboardPage({ session }) {
 
     try {
       const data = await runQuery(sessionId, trimmed);
+      // EDA queries return eda_full — redirect to EDA page
+      if (data.source === 'eda') {
+        navigate('/eda');
+        return;
+      }
       setResult(data);
     } catch (e) {
       setError(e.message || 'Query failed. Try rephrasing your question.');
@@ -176,9 +183,25 @@ export default function DashboardPage({ session }) {
           >
             {/* Meta row */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <TrendingUp size={16} className="text-emerald-400" />
                 <span className="text-white font-medium">{result.question}</span>
+                {/* Source badge */}
+                {result.source === 'llm' && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
+                    <Brain size={10} /> AI
+                  </span>
+                )}
+                {result.source === 'eda' && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                    <FlaskConical size={10} /> EDA
+                  </span>
+                )}
+                {result.source === 'rules' && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <Cpu size={10} /> rule engine
+                  </span>
+                )}
                 {result.attempts === 2 && (
                   <span className="badge-warning">corrected</span>
                 )}
@@ -226,6 +249,22 @@ export default function DashboardPage({ session }) {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* LLM Explanation Panel (when AI generated a natural-language answer) */}
+            <AnimatePresence>
+              {result.llm_explanation && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="glass-card p-5 border-l-2 border-indigo-500"
+                >
+                  <p className="text-xs text-indigo-400 font-medium uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Brain size={12} /> AI Analysis
+                  </p>
+                  <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{result.llm_explanation}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Root Cause Button */}
             <div className="flex justify-end">
