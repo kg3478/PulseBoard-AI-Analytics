@@ -170,6 +170,91 @@ function TableView({ rows, columns }) {
   );
 }
 
+
+function FunnelView({ rows }) {
+  if (!rows?.length) return <TableView rows={rows} columns={[]} />;
+  const maxUsers = rows[0]?.users || 1;
+
+  return (
+    <div className="space-y-3 py-2">
+      {rows.map((row, i) => {
+        const pct = Math.round((row.users / maxUsers) * 100);
+        return (
+          <div key={i}>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-slate-300 font-medium capitalize">{row.step}</span>
+              <div className="flex items-center gap-3 text-slate-500">
+                <span className="font-mono text-white">{row.users?.toLocaleString()} users</span>
+                <span className="text-emerald-400 font-semibold">{row.conversion_rate}%</span>
+                {i > 0 && <span className="text-rose-400">-{row.drop_off}%</span>}
+              </div>
+            </div>
+            <div className="h-8 bg-white/5 rounded-lg overflow-hidden">
+              <div
+                className="h-full rounded-lg transition-all duration-500"
+                style={{
+                  width: `${pct}%`,
+                  background: `linear-gradient(90deg, ${COLORS[i % COLORS.length]}cc, ${COLORS[i % COLORS.length]}66)`,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CohortView({ rows, columns }) {
+  if (!rows?.length) return <TableView rows={rows} columns={columns} />;
+  const weekCols = columns.filter(c => c.name.startsWith('week_'));
+
+  const cellColor = (val) => {
+    if (val === undefined || val === null) return 'transparent';
+    const v = parseFloat(val);
+    if (v >= 70) return 'rgba(52,211,153,0.35)';
+    if (v >= 50) return 'rgba(52,211,153,0.2)';
+    if (v >= 30) return 'rgba(251,191,36,0.2)';
+    if (v >= 10) return 'rgba(248,113,113,0.2)';
+    return 'rgba(248,113,113,0.1)';
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/5">
+            <th className="text-left text-slate-500 font-medium px-3 py-2 whitespace-nowrap">Cohort</th>
+            <th className="text-right text-slate-500 font-medium px-3 py-2">Size</th>
+            {weekCols.map(c => (
+              <th key={c.name} className="text-right text-slate-500 font-medium px-3 py-2">
+                {c.name.replace('_', ' ').toUpperCase()}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-white/5 last:border-0">
+              <td className="px-3 py-2 text-slate-300 font-mono whitespace-nowrap">{row.cohort}</td>
+              <td className="px-3 py-2 text-right text-slate-400">{row.cohort_size?.toLocaleString()}</td>
+              {weekCols.map(c => (
+                <td key={c.name} className="px-3 py-2 text-right font-semibold"
+                    style={{ backgroundColor: cellColor(row[c.name]) }}>
+                  <span style={{ color: parseFloat(row[c.name]) >= 50 ? '#34D399' :
+                                        parseFloat(row[c.name]) >= 20 ? '#FBBF24' : '#F87171' }}>
+                    {row[c.name] != null ? `${row[c.name]}%` : '—'}
+                  </span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Chart({ columns, rows, chartType }) {
   if (!rows?.length || !columns?.length) {
     return (
@@ -180,10 +265,12 @@ export default function Chart({ columns, rows, chartType }) {
   }
 
   const chartMap = {
-    bar: <BarChartView rows={rows} columns={columns} />,
-    line: <LineChartView rows={rows} columns={columns} />,
-    pie: <PieChartView rows={rows} columns={columns} />,
-    table: <TableView rows={rows} columns={columns} />,
+    bar:    <BarChartView rows={rows} columns={columns} />,
+    line:   <LineChartView rows={rows} columns={columns} />,
+    pie:    <PieChartView rows={rows} columns={columns} />,
+    table:  <TableView rows={rows} columns={columns} />,
+    funnel: <FunnelView rows={rows} columns={columns} />,
+    cohort: <CohortView rows={rows} columns={columns} />,
   };
 
   return (

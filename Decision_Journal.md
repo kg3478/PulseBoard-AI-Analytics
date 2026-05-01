@@ -7,77 +7,104 @@ This journal documents the critical technical and product decisions made during 
 ## Decision 1: Query Execution Engine
 ### 🥊 The Contenders: PostgreSQL vs. DuckDB
 
-- **Option A (PostgreSQL):** The industry standard for relational databases. We would need to parse the user's CSV, dynamically create tables in a hosted Postgres instance, write the data, and then query it.
-- **Option B (DuckDB):** An in-process analytical SQL engine designed specifically for fast queries on local files (CSV/Parquet).
+- **Option A (PostgreSQL):** Industry standard. Requires dynamic table creation, ETL, and a hosted Postgres instance.
+- **Option B (DuckDB):** In-process analytical SQL engine designed for fast queries on local files (CSV/Parquet).
 
 ### 🏆 The Winner: DuckDB
 **The PM Rationale:**
-Our North Star Metric is *Time-to-First-Insight*. Forcing a non-technical founder to wait for a backend ETL process to load their 50MB Stripe export into a Postgres database introduces friction, latency, and massive backend infrastructure costs.
-
-DuckDB allows us to execute SQL *directly* against the uploaded CSV in memory with zero setup. It is blazing fast and completely stateless, which drastically simplifies our MVP architecture and keeps cloud costs near zero. It perfectly aligns with our goal of "under 4 minutes to insight."
+Our North Star Metric is *Time-to-First-Insight*. DuckDB executes SQL *directly* against the uploaded CSV in memory with zero setup. It is stateless, blazing fast, and perfectly aligns with our goal of "under 4 minutes to insight." No cloud infrastructure cost.
 
 ---
 
 ## Decision 2: LLM Selection for NL-to-SQL
-### 🥊 The Contenders: OpenAI GPT-4 vs. Google Gemini 1.5 Flash vs. Groq + LLaMA 3.3
+### 🥊 The Contenders: OpenAI GPT-4 vs. Gemini 1.5 Flash vs. Groq + LLaMA 3.3
 
-- **Option A (GPT-4o):** The most capable model for coding and SQL generation. High accuracy, but expensive and relatively slow.
-- **Option B (Gemini 1.5 Flash):** Google's lightweight, high-speed model with a massive context window. Initially selected for its free tier and speed.
-- **Option C (Groq API + LLaMA 3.3 70B):** Groq's proprietary LPU hardware delivers the fastest LLM inference available (~300 tokens/second). Open-weight model, no vendor lock-in, free tier available.
+- **Option A (GPT-4o):** Most capable, but expensive and slow.
+- **Option B (Gemini 1.5 Flash):** Initially selected. Deprecated without backward compatibility — caused production 404s.
+- **Option C (Groq + LLaMA 3.3 70B):** Fast, free tier. Chosen post-Gemini incident.
 
 ### 🏆 The Winner: Groq API + LLaMA 3.3 70B Versatile
 **The PM Rationale:**
-PulseBoard initially launched with Gemini 1.5 Flash. However, Google deprecated the `gemini-1.5-flash` and `gemini-1.5-pro` models from the v1beta API without backward compatibility, causing 404 errors in production and breaking the core Ask query feature entirely.
-
-**This was a critical production incident that informed a key PM decision: avoid API vendor lock-in for mission-critical inference paths.**
-
-The migration to Groq delivered three compounding benefits:
-1. **Reliability:** Groq maintains stable model availability with clear deprecation timelines.
-2. **Speed:** LLaMA 3.3 70B on Groq's LPU hardware produces SQL in ~0.8 seconds — faster than Gemini Flash.
-3. **Cost:** Free tier covers all demo and portfolio traffic with generous rate limits.
-
-The self-correction retry loop architecture (if SQL fails, feed error back to LLM) was preserved unchanged, proving the value of decoupling business logic from the AI provider — a key resilience pattern.
+After the Gemini deprecation incident, Groq was adopted for its stability and speed (~0.8s SQL generation). The self-correction retry loop architecture proved resilient. Groq served as the production NL-to-SQL engine for V1.
 
 ---
 
-## Decision 3: Anomaly Detection Methodology
-### 🥊 The Contenders: Machine Learning (Isolation Forest) vs. Statistical (Z-Score)
+## Decision 3: Remove All LLM APIs → Fully Local Deterministic Engine *(V2 Decision)*
+### 🥊 The Contenders: Keep Groq vs. Local Rule-Based Engine
 
-- **Option A (Isolation Forest / Autoencoders):** Advanced ML models that can detect non-linear, multi-dimensional anomalies. Requires training data and compute overhead.
-- **Option B (Z-Score):** A simple statistical formula measuring how many standard deviations a data point is from the historical mean.
+- **Option A (Keep Groq):** Continue using LLM. Reliable but has rate limits, API costs, latency variability, and deployment fragility.
+- **Option B (Local Rule-Based Engine):** Build a deterministic NL→SQL parser using keyword scoring + SQL templates. Zero API calls.
 
-### 🏆 The Winner: Statistical Z-Score
+### 🏆 The Winner: Local Deterministic Engine
 **The PM Rationale:**
-"Don't use ML when Math will do."
-Founders don't trust black-box AI models that flag anomalies without explanation. Z-score is mathematically deterministic and highly explainable. We can explicitly tell the user: *"Your refund rate is 2.4 standard deviations above your 30-day average."*
+The core issue with LLM-based NL-to-SQL is **reliability at scale**: rate limits hit unexpectedly, free tiers run out, and latency is non-deterministic. For a deployment on Render free-tier (which cold-starts), every millisecond matters.
 
-Furthermore, training an ML model on a user's uploaded 90-day CSV is computationally expensive and overkill. Z-score requires zero training time, executes in milliseconds via NumPy, and immediately solves the user's pain point of "tell me if something breaks."
+The local engine delivers:
+1. **Reliability:** Deterministic — same input always produces same output
+2. **Speed:** <100ms parse time vs ~800ms for LLM inference
+3. **Cost:** Zero API costs — fully deployable on free-tier (Vercel + Render)
+4. **Privacy:** User data never leaves the server
+
+**Trade-off accepted:** The local engine handles ~80% of real-world analytics queries well. For the remaining 20% (highly complex joins, multi-hop reasoning), it falls back gracefully with schema-aware suggestions rather than silently producing wrong SQL.
 
 ---
 
-## Decision 4: User Interface Paradigm
-### 🥊 The Contenders: Dashboard Builder (Tableau-lite) vs. Pure NL Search (Google-style)
+## Decision 4: Anomaly Detection Methodology
+### 🥊 The Contenders: ML (Isolation Forest) vs. Statistical (Z-Score)
 
-- **Option A (Dashboard Builder):** A UI where users drag and drop X and Y axes, select chart types from dropdowns, and build persistent dashboard views.
-- **Option B (Pure NL Search):** A single prominent search bar where users type questions and the system auto-renders the optimal chart.
-
-### 🏆 The Winner: Pure NL Search
-**The PM Rationale:**
-We are explicitly building an "Anti-BI Tool." If we provide a drag-and-drop dashboard builder, we are forcing the founder to act as an analyst. They don't want to choose between a Bar chart and a Scatter plot—they just want to know why CAC is up.
-
-By restricting the UI to a search bar and 10 pre-built metric templates, we remove cognitive load. The system takes on the burden of choosing the visualization (via the `Chart.jsx` auto-selection logic). This deliberate constraint ensures the product remains simple enough for our target persona, differentiating us entirely from traditional BI competitors.
+**The Winner: Statistical Z-Score**
+"Don't use ML when Math will do." Z-score is deterministic, explainable, and executes in milliseconds via NumPy. Zero training time. Founders trust explicit thresholds ("2.4 standard deviations above average") far more than black-box ML flags.
 
 ---
 
-## Decision 5: Frontend Session State Management
-### 🥊 The Contenders: URL State vs. React Context vs. useRef + sessionStorage
+## Decision 5: User Interface Paradigm
+### 🥊 The Contenders: Dashboard Builder vs. NL Search Bar
 
-- **Option A (URL params):** Encode session_id in the URL. Simple but exposes implementation details and breaks on browser navigation.
-- **Option B (React Context):** Global state provider. Elegant but requires re-renders and suffers the same race condition as useState.
-- **Option C (useRef + sessionStorage):** Synchronous ref write before navigation, with sessionStorage for page reload recovery.
+**The Winner: Pure NL Search**
+Restricting the UI to a search bar removes analyst-mode thinking. The system takes on visualization selection burden. This differentiates PulseBoard from every traditional BI tool.
 
-### 🏆 The Winner: useRef + sessionStorage
+---
+
+## Decision 6: Frontend Session State Management
+
+**The Winner: useRef + sessionStorage**
+React's `useState` updates are asynchronous. Writing session to a `useRef` synchronously before `setSession` prevents the redirect race condition on "Start Analyzing." `sessionStorage` adds reload resilience.
+
+---
+
+## Decision 7: Minimal File Structure for PM Analytics Layer *(V2 Decision)*
+### 🥊 The Contenders: Sub-Package vs. Single File
+
+- **Option A (Sub-Package):** Create `backend/pm_engine/` with `funnel.py`, `cohort.py`, `metrics.py`, `detector.py` etc.
+- **Option B (Single File):** Consolidate all PM analytics into `backend/services/pm_analytics.py`.
+
+### 🏆 The Winner: Single File (`pm_analytics.py`)
 **The PM Rationale:**
-React's `useState` updates are asynchronous — they batch and apply after the current render. When a user clicks "Start Analyzing" immediately after a successful upload, the router guard evaluates `session` state before the async update propagates, causing a redirect loop back to the upload page.
+The PM analytics functions share state (column detection helpers, hint sets) and are always used together. Splitting them into a sub-package would add import overhead, navigation complexity, and create temptation to over-engineer.
 
-The fix: write the session to a `useRef` **synchronously** before calling `setSession`, then use that ref in the route guard. The ref is always current, regardless of render cycle. `sessionStorage` adds resilience for page refreshes. This pattern — synchronous ref + async state — is a production-grade React session management technique that demonstrates deep understanding of the React rendering lifecycle.
+**Rule applied:** "Don't create structure for structure's sake." 250 lines in one well-organized file is better than 5 files of 50 lines that require cross-file navigation to understand a single workflow.
+
+---
+
+## Decision 8: PM Template Routing via Sentinel Pattern *(V2 Decision)*
+### 🥊 The Contenders: Separate Parser vs. Sentinel in Existing Templates
+
+- **Option A (Separate Parser):** Build a parallel PM intent parser that runs before the SQL parser.
+- **Option B (Sentinel in Templates):** Add PM templates to the existing `TEMPLATES` list with `sql_pattern='__PM_ENGINE__'`. Parser detects the sentinel and returns a `pm_query=True` flag.
+
+### 🏆 The Winner: Sentinel Pattern
+**The PM Rationale:**
+The sentinel approach reuses the existing template scoring system — PM and SQL templates compete on the same scoring function. This means PM templates naturally win when the user asks a PM question ("funnel", "retention") and SQL templates win for SQL questions ("revenue by city"). Zero code duplication.
+
+The alternative (separate parser) would require maintaining two independent keyword-scoring systems that could drift out of sync.
+
+---
+
+## Decision 9: Context-Aware Intelligence Without ML *(V2 Decision)*
+
+The system detects dataset type (product_analytics / financial / marketing / generic) using **column name intersection** with curated hint sets — no ML models, no embeddings, no API calls. This is:
+- **Instant:** Pure set intersection, O(n) where n = number of columns
+- **Transparent:** Developers can read and extend the hint sets directly
+- **Reliable:** No model drift, no retraining required
+
+Trade-off: Cannot detect dataset type from *data values* (e.g., a financial dataset where all columns are named `col_1`, `col_2`). This edge case is handled by defaulting to `generic` with standard query suggestions.
